@@ -1,0 +1,655 @@
+#INCLUDE "PROTHEUS.CH"
+#include "TBIConn.ch"
+#include "TopConn.ch"
+#include "TBICode.ch"
+//#INCLUDE "orcam.ch"
+
+#DEFINE CRLF Chr(13)+Chr(10)
+
+
+/*/{Protheus.doc} PC_A4
+Impressão do Pedido de compras modelo grafico.
+@type function
+@version  
+@author wilks
+@since 28/12/2022
+@return variant, return_description
+/*/
+
+
+User Function PC_A4()
+
+	Local oReport
+	local lPrepare := IIF(type("cEmpAnt")=="U", .t., .f.)
+
+	private oBrush := TBrush():New(,CLR_LIGHTGRAY)
+	private oFonte_07	:= TFont():New('ARIAL',,7.5,.T.,.F.)
+	private oFonte_08	:= TFont():New('ARIAL',,8,.T.,.F.)
+	private oFonte_10N	:= TFont():New('ARIAL',,10,.T.,.T.)
+	private oFonte_10	:= TFont():New('ARIAL',,10,.T.,.f.)
+	private oFonte_09	:= TFont():New('ARIAL',,09,.T.,.f.)
+	private oFonte_09N	:= TFont():New('ARIAL',,09,.T.,.T.)
+	private oFonte_11N	:= TFont():New('ARIAL',,11.5,.T.,.T.)
+	private oFonte_11	:= TFont():New('ARIAL',,11.5,.T.,.f.)
+	private oFonte_12N	:= TFont():New('ARIAL',,12,.T.,.T.)
+	private oFonte_12	:= TFont():New('ARIAL',,12,.T.,.f.)
+	private oFonte_14N	:= TFont():New('ARIAL',,14,.T.,.T.)
+	private oFonte_14	:= TFont():New('ARIAL',,14,.T.,.f.)
+	private oFonte_18N	:= TFont():New('ARIAL',,18,.T.,.T.)
+	private oFonte_18	:= TFont():New('ARIAL',,18,.T.,.F.)
+	private oBox
+	private	cDATALI1:=""
+	private	cDATALI2:=""
+	private	cDATALI3:=""
+	private cHORALI1:=""
+	private cHORALI2:=""
+	private cHORALI3:=""
+	private cAprov1 := ""
+	private	cAprov2 := ""
+	private	cAprov3 := ""
+	private	cSolicit := " - "
+	private	_cObser := ""
+
+
+	Private _cPedComp := ""
+	Private _cFilSC7 := ""
+
+	if lPrepare
+		//Utilizada para instancionar em modo debugger
+		//******************************************
+		PREPARE ENVIRONMENT EMPRESA '01' FILIAL '01'
+		//******************************************
+
+		//Ativa o modo de interface grafica: alerts, msgboxes, etc
+		//default __cInternet := AUTOMATICO
+		__cInternet := NIL
+	end
+
+//Carregando definições do Relatório
+	oReport:= ReportDef()
+	oReport:PrintDialog() // Exibe a tela de configuração para a impressão do relatório
+	//oReport:Print()
+
+	if lPrepare
+		//Desabilitar quando em produção
+		//***************
+		RESET ENVIRONMENT
+	end
+
+
+
+Return
+
+Static Function ReportDef()
+
+	Local oReport
+	Local oPreNota
+	Local nItem := 0
+	Local aItemPed  := {}
+
+	IF FUNNAME() $ "MATA121/MATA120"
+		_cPedComp := SC7->C7_NUM
+		_cFilSC7  := XFILIAL("SC7")
+	ENDIF
+
+
+//ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+//³Criacao do componente de impressao                                      ³
+//³                                                                        ³
+//³TReport():New                                                           ³
+//³ExpC1 : Nome do relatorio                                               ³
+//³ExpC2 : Titulo                                                          ³
+//³ExpC3 : Pergunte                                                        ³
+//³ExpB4 : Bloco de codigo que sera executado na confirmacao da impressao  ³
+//³ExpC5 : Descricao                                                       ³
+//³                                                                        ³
+//ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+	oReport := TReport():New("PC_"+_cFilSC7+_cPedComp+"_"+substr(time(),1,2)+substr(time(),4,2)+substr(time(),7,2);
+		,"Emissao da Confirmacao do Pedido","PC_A4", {|oReport| ReportPrint(oReport,oPreNota,@nItem,aItemPed)}," ")	// "Emissao da Confirmacao do Pedido"###"Emissao da confirmacao dos pedidos de venda, de acordo com"###"intervalo informado na opcaoo Parametros."
+	oReport:SetPortrait()
+	oReport:SetTotalInLine(.F.)
+	oReport:SetDevice(6)
+//	oReport:SetFile(_cFilSC7+_cPedComp+"_"+substr(time(),1,2)+substr(time(),4,2)+substr(time(),7,2))
+//	oReport:SetEnvironment(1)
+	oReport:SetPreview(.T.)
+	oReport:oPage:setPaperSize(9)
+	oReport:lParamPage := .F.
+
+
+	Pergunte(oReport:uParam,.F.)
+
+Return(oReport)
+
+
+Static Function ReportPrint(oReport,oPreNota,nItem,aItemPed)
+
+	local ni := 0
+	local nXi := 0
+	Local nLinha := 0
+	Local nLinProd := 0
+	Local nControl := 0
+	Local nAltLinh := 0
+	Local nCorLinha := 0
+	Local cArqind := GetNextAlias()
+	//Local cQryAux := ""
+
+
+	dbSelectArea("SC7")
+	dbSetOrder(1)
+	dbSeek(_cFilSC7+_cPedComp)
+
+	_cObser := SC7->C7_OBSM
+
+	// Busca dados de solitante e aprovadores.
+	dbSelectArea("SC1")
+	IF dbSeek(SC7->C7_FILIAL+SC7->C7_NUMSC+SC7->C7_ITEMSC)
+		cSolicit := alltrim(SC1->C1_SOLICITA)
+	ENDIF
+
+
+	BeginSql alias cArqind
+    column CR_DATALIB as Date
+    SELECT
+        CR_NIVEL AS NIVEL,
+        AK_NOME AS APROVADOR,
+		CR_DATALIB AS DATALIB,
+		CR_HORA AS HORALIB
+    FROM
+        %table:SCR% ,%table:SAK% AK
+    WHERE
+        CR_FILIAL = %exp:_cFilSC7% AND
+        CR_NUM = %exp:_cPedComp% AND
+		AK.AK_FILIAL= %xfilial:AK% AND
+        AK.AK_COD=CR_APROV AND
+        CR_STATUS IN ('03') AND
+		CR_DATALIB>'' AND
+		CR_TIPO IN ('PC','IP') AND
+        %table:SCR%.%notDel% AND
+        AK.%notDel% 
+		ORDER BY CR_NIVEL
+	EndSql
+
+
+	(cArqind)->(DbGoTop())
+	While !(cArqind)->(Eof())
+
+		IF "1"$(cArqind)->NIVEL
+			cAprov1 := 	(cArqind)->APROVADOR
+			cDATALI1 :=  DTOC(STOD((cArqind)->DATALIB))
+			cHORALI1 := (cArqind)->HORALIB
+
+		ENDIF
+
+		IF "2"$(cArqind)->NIVEL
+			cAprov2  := (cArqind)->APROVADOR
+			cDATALI2 := DTOC(STOD((cArqind)->DATALIB))
+			cHORALI2 := (cArqind)->HORALIB
+		ENDIF
+
+		IF "3"$(cArqind)->NIVEL
+			cAprov3  := (cArqind)->APROVADOR
+			cDATALI3 := DTOC(STOD((cArqind)->DATALIB))
+			cHORALI3 := (cArqind)->HORALIB
+		ENDIF
+
+
+		(cArqind)->(dbSkip())
+	EndDo
+
+
+	(cArqind)->(DbCloseArea())
+
+//Dados do Item do Pedido/Orcamento
+	dbSelectArea("SC7")
+	dbSetOrder(1)
+	dbGoTop()
+	dbSeek(_cFilSC7+_cPedComp)
+
+	do while !EOF() .and. SC7->C7_FILIAL+SC7->C7_NUM == _cFilSC7+_cPedComp
+		aadd(aItemPed,{	 SC7->C7_ITEM,;		//1
+		SC7->C7_PRODUTO,;	//2
+		SC7->C7_DESCRI,;	//3
+		SC7->C7_QUANT,;		//4
+		SC7->C7_UM,;		//5
+		SC7->C7_PRECO,;		//6 Valor Unitario
+		SC7->C7_TOTAL,;		//7 Valor do Item
+		SC7->C7_DESC ,;	//8 Desconto %
+		""	  ,;	//9 NCM
+		SC7->C7_VALICM,;	//10 Valor ICMS
+		SC7->C7_PICM  ,;	//11 Aliquota ICMS
+		SC7->C7_IPI   ,;	//12 Aliquota IPI
+		SC7->C7_VALIPI,;	//13 ALIQ IPI
+		SC7->C7_SEGURO,;	//14 SEGURO
+		SC7->C7_VALFRE,;	//15 FRETE
+		SC7->C7_DESPESA})	//16 DESPESAS
+
+		dbskip()
+	enddo
+
+	ImpCabecR4(oReport)
+
+	nLinha := 1010
+//Imprimindo os itens do Pedido
+//oReport:FillRect( {nLinha,0021,1100,2400}, oBrush )  //Quadro 3 - Detalhes do Pedido
+//          /alt /ini /fim   / larg 
+	oReport:Box(1040,0020,1040+50,0100,oBox) //Quadro item
+	oReport:Say(1050,0030,"Item",oFonte_10N)
+	oReport:Box(1040,0100,1040+50,0350,oBox) //Quadro codigo
+	oReport:Say(1050,0110,"Código",oFonte_10N)
+	oReport:Box(1040,0350,1040+50,1150,oBox) //Quadro Descrição
+	oReport:Say(1050,0360,"Descrição",oFonte_10N)
+	oReport:Box(1040,1150,1040+50,1300,oBox) //Quadro NCM
+	oReport:Say(1050,1160,"NCM",oFonte_10N)
+	oReport:Box(1040,1300,1040+50,1400,oBox) //Quadro UM
+	oReport:Say(1050,1310,"UM",oFonte_10N)
+	oReport:Box(1040,1400,1040+50,1500,oBox) //Quadro ALIQ IPI
+	oReport:Say(1050,1410,"%.IPI",oFonte_10N)
+	oReport:Box(1040,1500,1040+50,1650,oBox) //Quadro QTD
+	oReport:Say(1050,1510,"QTD",oFonte_10N)
+	oReport:Box(1040,1650,1040+50,1800,oBox) //Quadro Preço
+	oReport:Say(1050,1660,"Preco",oFonte_10N)
+	oReport:Box(1040,1800,1040+50,1950,oBox) //Quadro ICMS
+	oReport:Say(1050,1810,"V.ICMS",oFonte_10N)
+	oReport:Box(1040,1950,1040+50,2100,oBox) //Quadro % ICMS
+	oReport:Say(1050,1960,"%.ICMS",oFonte_09N)
+	oReport:Box(1040,2100,1040+50,2500,oBox) //Quadro Total
+	oReport:Say(1050,2115,"Total",oFonte_10N)
+	nLinha := 1100
+
+//Totalizadores
+	nTotPed := 0
+	nValMerc := 0
+	nTotDes := 0
+	nTotIPI := 0
+	nTotICMS := 0
+	nQtdtens := 0
+	nTotFret := 0
+	nTotSegu := 0
+	nTotDesp := 0
+
+//For ni := 1 to len(aItemPed) ITENS DO PEDIDO
+	For ni := 1 to len(aItemPed)
+
+		nCorLinha := MOD(ni,2) // define cor da linha
+
+		DbSelectArea('SB1')
+		DbSetOrder(1)
+		DBSEEK(xfilial('SB1')+aItemPed[ni,2])
+
+		nLinProd := nLinha
+
+		if MLCount(alltrim(aItemPed[ni,3]),50) == 1
+			nAltLinh := 50
+		else
+			nAltLinh := 80
+		endif
+
+		if nCorLinha==1
+			// Linha Branca
+			oReport:Box(nLinha-10,0020,nLinha-10+nAltLinh,0100,oBox) //Quadro item
+			oReport:Box(nLinha-10,0100,nLinha-10+nAltLinh,0350,oBox) //Quadro Código
+			oReport:Box(nLinha-10,0350,nLinha-10+nAltLinh,1150,oBox) //Quadro Descrição
+
+			oReport:Box(nLinha-10,1150,nLinha-10+nAltLinh,1300,oBox) //Quadro NCM
+			oReport:Box(nLinha-10,1300,nLinha-10+nAltLinh,1400,oBox) //Quadro UM
+			oReport:Box(nLinha-10,1400,nLinha-10+nAltLinh,1500,oBox) //Quadro Alq IPI
+			oReport:Box(nLinha-10,1500,nLinha-10+nAltLinh,1650,oBox) //Quadro QTD
+			oReport:Box(nLinha-10,1650,nLinha-10+nAltLinh,1800,oBox) //Quadro Preço
+			oReport:Box(nLinha-10,1800,nLinha-10+nAltLinh,1950,oBox) //Quadro ICMS
+			oReport:Box(nLinha-10,1950,nLinha-10+nAltLinh,2100,oBox) //Quadro % ICMS
+			oReport:Box(nLinha-10,2100,nLinha-10+nAltLinh,2500,oBox) //Quadro Total
+		ELSE
+			// Linha Pintada
+			oReport:Box(nLinha-10,0020,nLinha-10+nAltLinh,0100,oBox) //Quadro item
+			oReport:FillRect( {nLinha-5,0025,nLinha-10+nAltLinh,0098}, oBrush )   //Pinta item
+			oReport:Box(nLinha-10,0100,nLinha-10+nAltLinh,0350,oBox) //Quadro Código
+			oReport:FillRect( {nLinha-5,0105,nLinha-10+nAltLinh,0346}, oBrush )   //Pinta Código
+			oReport:Box(nLinha-10,0350,nLinha-10+nAltLinh,1150,oBox) //Quadro Descrição
+			oReport:FillRect( {nLinha-5,0355,nLinha-10+nAltLinh,1146}, oBrush )   //Pinta Descrição
+
+			oReport:Box(nLinha-10,1150,nLinha-10+nAltLinh,1300,oBox) //Quadro NCM
+			oReport:FillRect( {nLinha-5,1155,nLinha-10+nAltLinh,1296}, oBrush )   //Pinta NCM
+			oReport:Box(nLinha-10,1300,nLinha-10+nAltLinh,1400,oBox) //Quadro UM
+			oReport:FillRect( {nLinha-5,1305,nLinha-10+nAltLinh,1396}, oBrush )   //Pinta UM
+			oReport:Box(nLinha-10,1400,nLinha-10+nAltLinh,1500,oBox) //Quadro Alq IPI
+			oReport:FillRect( {nLinha-5,1405,nLinha-10+nAltLinh,1496}, oBrush )   //Pinta Aliq IPI
+			oReport:Box(nLinha-10,1500,nLinha-10+nAltLinh,1650,oBox) //Quadro QTD
+			oReport:FillRect( {nLinha-5,1503,nLinha-10+nAltLinh,1646}, oBrush )   //Pinta QTD
+			oReport:Box(nLinha-10,1650,nLinha-10+nAltLinh,1800,oBox) //Quadro Preço
+			oReport:FillRect( {nLinha-5,1653,nLinha-10+nAltLinh,1796}, oBrush )   //Pinta Preço
+			oReport:Box(nLinha-10,1800,nLinha-10+nAltLinh,1950,oBox) //Quadro ICMS
+			oReport:FillRect( {nLinha-5,1805,nLinha-10+nAltLinh,1946}, oBrush )   //Pinta ICMS
+			oReport:Box(nLinha-10,1950,nLinha-10+nAltLinh,2100,oBox) //Quadro % ICMS
+			oReport:FillRect( {nLinha-5,1955,nLinha-10+nAltLinh,2096}, oBrush )   //Pinta % ICMS
+			oReport:Box(nLinha-10,2100,nLinha-10+nAltLinh,2500,oBox) //Quadro Total
+			oReport:FillRect( {nLinha-5,2103,nLinha-10+nAltLinh,2496}, oBrush )   //Pinta Total
+		ENDIF
+
+
+		oReport:Say(nLinha,0030,aItemPed[ni,1],oFonte_08)	//Item
+		oReport:Say(nLinha,0115,alltrim(SB1->B1_COD),oFonte_08)	//Código
+		// Tratativa para quebra de linha
+		For nXi := 1 To MLCount(alltrim(aItemPed[ni,3]),70)
+			oReport:Say(nLinProd,0360,MemoLine(aItemPed[ni,3],70,nXi),oFonte_08) // Descrição produto
+			nLinProd += 30
+		Next nXi
+		//oReport:Say(nLinha,1055,alltrim(SB1->B1_TAMANHO),oFonte_07)	//Tamanho
+		//oReport:Say(nLinha,1205,alltrim(SB1->B1_FABRIC),oFonte_07)	//Fabricante
+		oReport:Say(nLinha,1160,SB1->B1_POSIPI,oFonte_08)	//NCM
+		oReport:Say(nLinha,1310,aItemPed[ni,5],oFonte_08)	//Unidade
+
+		oReport:Say(nLinha,1410,padL(transform(aItemPed[ni,12],"@E 99.99"),5),oFonte_08)		//Alq IPI
+		oReport:Say(nLinha,1510,padL(transform(aItemPed[ni,4],"@E 99,999.99"),10),oFonte_08) 	//quant
+		oReport:Say(nLinha,1660,padL(transform(aItemPed[ni,6],"@E 999,999.99"),10),oFonte_08)	//valor unitario
+		oReport:Say(nLinha,1810,padL(transform(aItemPed[ni,10],"@E 9,999.99"),10),oFonte_08)	//valor ICMS
+		oReport:Say(nLinha,1960,padL(transform(aItemPed[ni,11],"@E 99.99"),5),oFonte_08)		//% ICMS
+
+		//oReport:Say(nLinha,2310,padL(transform(aItemPed[ni,7],"@E 9,999,999.99"),12),oFonte_08)	//Total
+
+
+		_CodRefer := ''
+
+
+		nVIPI := aItemPed[ni,13] //Calcando valor do IPI
+
+		//Calculo para ICMS Solidario
+		nVICMSOL := 0
+		//oReport:Say(nLinha,2080,padL(transform(nVICMSOL,"@E 9,999.99"),10),oFonte_12)	//ICMS ST
+
+		//Total do Item
+		oReport:Say(nLinha,2115,padL(transform((aItemPed[ni,7]+nVIPI+nVICMSOL),"@E 99,999,999.99"),13),oFonte_08)	//total
+
+
+		if MLCount(alltrim(aItemPed[ni,3]),60) == 1
+			nLinha += 50
+		else
+			nLinha += 80
+		endif
+
+		//Somando totais
+		nValMerc 	+= aItemPed[ni,7]
+		nTotIPI		+= nVIPI
+		nTotDes     += aItemPed[ni,8]
+		nTotFret 	+= aItemPed[ni,15]
+		nTotSegu 	+= aItemPed[ni,14]
+		nTotDesp 	+= aItemPed[ni,16]
+		nTotICMS 	+= nVICMSOL
+		nTotPed 	+= (aItemPed[ni,7] + nVIPI + nVICMSOL + aItemPed[ni,15] + aItemPed[ni,14] + aItemPed[ni,16]) - aItemPed[ni,8]
+		nQtdtens 	+= aItemPed[ni,4]
+
+
+		nControl ++ // controle de paginas
+		if nControl >= 30
+			nControl := 0
+			ImpRodR4(oReport,nLinha)
+			oReport:EndPage()
+			oReport:StartPage() //StartPage
+			ImpCabecR4(oReport)
+
+			nLinha := 1010
+			nAjustLin := 5
+			//Imprimindo os itens do Pedido
+			//oReport:FillRect( {nLinha,0021,1100,2400}, oBrush )  //Quadro 3 - Detalhes do Pedido
+			oReport:Box(1040,0020,1040+50,0100,oBox) //Quadro item
+			oReport:Say(1050,0030,"Item",oFonte_10N)
+			oReport:Box(1040,0100,1040+50,0350,oBox) //Quadro codigo
+			oReport:Say(1050,0110,"Código",oFonte_10N)
+			oReport:Box(1040,0350,1040+50,1150,oBox) //Quadro Descrição
+			oReport:Say(1050,0360,"Descrição",oFonte_10N)
+			oReport:Box(1040,1150,1040+50,1300,oBox) //Quadro NCM
+			oReport:Say(1050,1160,"NCM",oFonte_10N)
+			oReport:Box(1040,1300,1040+50,1400,oBox) //Quadro UM
+			oReport:Say(1050,1310,"UM",oFonte_10N)
+			oReport:Box(1040,1400,1040+50,1500,oBox) //Quadro ALIQ IPI
+			oReport:Say(1050,1410,"%.IPI",oFonte_10N)
+			oReport:Box(1040,1500,1040+50,1650,oBox) //Quadro QTD
+			oReport:Say(1050,1510,"QTD",oFonte_10N)
+			oReport:Box(1040,1650,1040+50,1800,oBox) //Quadro Preço
+			oReport:Say(1050,1660,"Preco",oFonte_10N)
+			oReport:Box(1040,1800,1040+50,1950,oBox) //Quadro ICMS
+			oReport:Say(1050,1810,"V.ICMS",oFonte_10N)
+			oReport:Box(1040,1950,1040+50,2100,oBox) //Quadro % ICMS
+			oReport:Say(1050,1960,"%.ICMS",oFonte_09N)
+			oReport:Box(1040,2100,1040+50,2500,oBox) //Quadro Total
+			oReport:Say(1050,2115,"Total",oFonte_10N)
+			nLinha := 1120
+		ENDIF
+	next
+
+/*********************
+//Imprmindo os Rodapés
+*********************/
+// OBSERVACOES
+
+//nLinha := 2850
+nLinha := 2550
+
+oReport:Box(nLinha-50,0020 ,nLinha+500,1400,oBox) //Quadro 3 - Detalhes do Pedido
+oReport:Box(nLinha-50,1400 ,nLinha+500,2500,oBox) //Quadro 4 - Detalhes do Orçamento
+oReport:Box(nLinha+500,0020,nLinha+650,0520,oBox) //Quadro 5 - Detalhes Solicitante
+oReport:Box(nLinha+500,0520,nLinha+650,1180,oBox) //Quadro 6 - Detalhes Aprovador 1
+oReport:Box(nLinha+500,1180,nLinha+650,1840,oBox) //Quadro 7 - Detalhes Aprovador 2
+oReport:Box(nLinha+500,1840,nLinha+650,2500,oBox) //Quadro 8 - Detalhes Aprovador 3
+oReport:Box(nLinha+350,0020,nLinha+500,1400,oBox)  //Quadro 9 - Detalhes Horário de recebimento
+
+oReport:Say(nLinha,0030,"OBSERVAÇÕES: ",oFonte_12)
+nLinObs := nLinha+50
+		For nXi := 1 To MLCount(alltrim(_cObser),200)
+			oReport:Say(nLinObs,0030,MemoLine(_cObser,200,nXi),oFonte_12) // OBSERVAÇÕES
+			nLinProd += 30
+		Next nXi
+
+
+oReport:Say(nLinha+360,0080,"HORÁRIO DE RECEBIMENTO ",oFonte_12)
+oReport:Say(nLinha+410,0080,"Segunda a quinta, das 07:00h as 12:00h e das 13:00h as 16:30h",oFonte_12)
+oReport:Say(nLinha+460,0080,"Sexta, das 07:00h as 12:00h e das 13:00h as 15:30h",oFonte_12)
+
+oReport:Say(nLinha+520,0030,"Solicitante",oFonte_12)
+oReport:Say(nLinha+570,0030,cSolicit 	 ,oFonte_11N)
+oReport:Say(nLinha+520,0530,"Aprovador 1",oFonte_12)
+oReport:Say(nLinha+570,0530,SUBSTR(cAprov1,1,33),oFonte_11N)
+oReport:Say(nLinha+600,0530,cDATALI1+" - "+cHORALI1,oFonte_11N)
+oReport:Say(nLinha+520,1190,"Aprovador 2",oFonte_12)
+oReport:Say(nLinha+570,1190,SUBSTR(cAprov2,1,33),oFonte_11N)
+oReport:Say(nLinha+600,1190,cDATALI2+" - "+cHORALI2,oFonte_11N)
+oReport:Say(nLinha+520,1850,"Aprovador 3",oFonte_12)
+oReport:Say(nLinha+570,1850,SUBSTR(cAprov3,1,33),oFonte_11N)
+oReport:Say(nLinha+600,1850,cDATALI3+" - "+cHORALI3,oFonte_11N)
+
+
+nAjustCol := 150
+
+oReport:Say(nLinha		,1600-nAjustCol,"VALOR DA MERCADORIA:",oFonte_12)
+oReport:Say(nLinha		,2200-nAjustCol,LTrim("+ R$ "+transform(nValMerc,"@E 999,999,999.99")),oFonte_12)	//totalizadores
+oReport:Say(nLinha+50	,1600-nAjustCol,"DESCONTO:",oFonte_12)
+oReport:Say(nLinha+50	,2200-nAjustCol,LTrim("-  R$ "+transform(nTotDes,"@E 999,999,999.99")),oFonte_12)
+oReport:Say(nLinha+100	,1600-nAjustCol,"SEGURO:",oFonte_12)
+oReport:Say(nLinha+100	,2200-nAjustCol,LTrim("+ R$ "+transform(nTotSegu,"@E 999,999,999.99")),oFonte_12)
+oReport:Say(nLinha+150	,1600-nAjustCol,"VALOR DO FRETE:",oFonte_12)
+oReport:Say(nLinha+150	,2200-nAjustCol,LTrim("+ R$ "+transform(nTotFret,"@E 999,999,999.99")),oFonte_12)
+oReport:Say(nLinha+200	,1600-nAjustCol,"DESPESAS:",oFonte_12)
+oReport:Say(nLinha+200	,2200-nAjustCol,LTrim("+ R$ "+transform(nTotDesp,"@E 999,999,999.99")),oFonte_12)
+oReport:Say(nLinha+250	,1600-nAjustCol,"VALOR IPI:",oFonte_12)
+oReport:Say(nLinha+250	,2200-nAjustCol,LTrim("+ R$ "+transform(nTotIPI,"@E 999,999,999.99")),oFonte_12)
+oReport:Say(nLinha+300	,1600-nAjustCol,"VALOR SUB. TRIB.:",oFonte_12)
+oReport:Say(nLinha+300	,2200-nAjustCol,LTrim("+ R$ "+transform(0,"@E 999,999,999.99")),oFonte_12)
+oReport:Say(nLinha+350	,1600-nAjustCol,"VALOR SUB.TRIB. INTERNA",oFonte_12)
+oReport:Say(nLinha+350	,2200-nAjustCol,LTrim("+ R$ "+transform(0,"@E 999,999,999.99")),oFonte_12)
+oReport:Say(nLinha+400	,1600-nAjustCol,"TOTAL DO PEDIDO:",oFonte_12)
+oReport:Say(nLinha+400	,2200-nAjustCol,LTrim("= R$  "+transform(nTotPed,"@E 999,999,999.99")),oFonte_12)	//totalizadores
+
+
+
+oReport:SayBitmap(nLinha+0690,1250,'\system\lgmid.png',126,100)
+oReport:EndPage()
+
+Return
+
+/*/
+ÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜ
+±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
+±±ÚÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄ¿±±
+±±³Fun‡…o    ³ImpCabecR4³ Autor ³ Wilk Lima         ³ Data ³ 29/10/20  ³±±
+±±ÃÄÄÄÄÄÄÄÄÄÄÅÄÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄ´±±
+±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
+ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß
+/*/
+Static Function ImpCabecR4(oReport)
+Local nPrinLin  := 0
+Local _Situac	:= "Orçamento"
+Local _aCombo  := {}
+Local _nPos  := 0
+Local _cTpFrete := ""
+
+//local oFonte_14N:= TFont():New('ARIAL',,14,.T.,.T.)
+//local oFonte_14	:= TFont():New('ARIAL',,14,.T.,.f.)
+//local oFonte_18N:= TFont():New('ARIAL',,18,.T.,.T.)
+
+
+//ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+//³ Inicializa impressao do cabecalho                           ³
+//ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+oReport:HideHeader()			// Nao imprime cabecalho padrao do Protheus
+oReport:HideFooter()			// Nao imprime rodapé padrao do Protheus
+
+
+//ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+//³ Desenha as caixas do cabecalho Dados da Empresa             ³
+//ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+//oReport:Box(0020,0020,3400,2400,oBox) //Quadro 1 - Dados da Empresa  
+
+//ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+//³ Informacoes do Quadro 1: Dados da Empresa        
+// Logotipo + Textos           ³
+//ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+
+//TReport():SayBitmap( <nRow> , <nCol> , <cBitmap> , <nWidth> , <nHeight> , <nRaster> ) 
+IF SUBSTR(XFILIAL("SC7"),1,2)=='01'
+oReport:SayBitmap(0020,0040,'\system\lgmid.png',426,300)
+ELSE
+oReport:SayBitmap(0020,0040,'\system\lgmid.png',426,300)
+ENDIF
+
+	dbSelectArea("SC7")
+	dbSetOrder(1)
+	dbGoTop()
+	dbSeek(_cFilSC7+_cPedComp)
+
+nPrinLin += 30
+oReport:Say(nPrinLin+020,0510,ALLTRIM(SM0->M0_NOMECOM),oFonte_12N)
+oReport:Say(nPrinLin+070,0510,"CNPJ: "+TRANSFORM(ALLTRIM(SM0->M0_CGC), "@r 99.999.999/9999-99"),oFonte_12) //10.441.638/0001-11
+oReport:Say(nPrinLin+120,0510,"Endereço: "+SM0->M0_ENDENT,oFonte_12)
+oReport:Say(nPrinLin+170,0510,"Bairro: "+SM0->M0_BAIRENT,oFonte_12)
+oReport:Say(nPrinLin+220,0510,"Cidade: "+alltrim(SM0->M0_CIDENT)+" / "+SM0->M0_ESTENT+" - CEP: "+SM0->M0_CEPENT,oFonte_12)
+oReport:Say(nPrinLin+270,0510,"Telefone: "+SM0->M0_TEL ,oFonte_12)
+oReport:Say(nPrinLin+320,0510,"E-mail: sac@ecotaua.com.br",oFonte_12)
+
+// dados do comprador
+dbSelectArea("SY1")
+DbSetOrder(3)
+IF DBSEEK(XFILIAL("SY1")+SC7->C7_USER) //LOJA
+	oReport:Say(nPrinLin+70,1450,"Comprador: "+ Alltrim(SY1->Y1_NOME),oFonte_14)
+	oReport:Say(nPrinLin+120,1450,ALLTRIM(SY1->Y1_EMAIL),oFonte_14)
+	oReport:Say(nPrinLin+170,1450,"Tel. ("+ALLTRIM(SY1->Y1_TEL)+") "+ALLTRIM(SA3->A3_TEL),oFonte_14)
+ELSE
+	oReport:Say(nPrinLin+70,1450,"Comprador: "+ Alltrim(UsrFullName(SC7->C7_USER)),oFonte_14)
+	//oReport:Say(nPrinLin+120,1450,ALLTRIM(SA3->A3_EMAIL),oFonte_14)
+	//oReport:Say(nPrinLin+170,1450,"Tel. ("+ALLTRIM(SA3->A3_DDDTEL)+") "+ALLTRIM(SA3->A3_TEL),oFonte_14)
+ENDIF
+
+cDataEmissao := cValToChar(day(SC7->C7_EMISSAO))+"/"+cValToChar(month(SC7->C7_EMISSAO))+"/"+cValToChar(year(SC7->C7_EMISSAO))
+oReport:Say(nPrinLin+120,2100,"PEDIDO nº "+SC7->C7_NUM,oFonte_14N)
+oReport:Say(nPrinLin+170,2100,"Emissão "+cDataEmissao,oFonte_12)
+//oReport:Say(nPrinLin+220,2100," às "+SL1->L1_HORA,oFonte_12)
+
+IF SC7->C7_ENCER == 'E'
+	_Situac	:= "Encerrado"
+elseif SC7->C7_CONAPRO<>'L'
+	_Situac	:= "Aguardando aprovação."
+else
+	_Situac	:= "Aprovado"	
+endif
+
+
+nPrinLin := 420
+
+oReport:Say(0440,900,"P E D I D O    D E    C O M P R A" ,oFonte_18N)
+
+
+//ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+//³ Desenha as caixas do cabecalho dados do cliente             ³
+//ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+dbSelectArea("SA2")
+dbSetOrder(1)
+dbseek(xFilial("SA2")+SC7->C7_FORNECE+SC7->C7_LOJA)
+oReport:Box(510,020,1010,1600,oBox) //Quadro 1 - Detalhes do Cliente
+
+oReport:Say(550,50,"Fornecedor:",oFonte_12N)
+oReport:Say(550,250,alltrim(SA2->A2_NREDUZ) ,oFonte_12)
+oReport:Say(600,50,SC7->C7_FORNECE+"-"+SC7->C7_LOJA+" "+alltrim(SA2->A2_NOME) ,oFonte_12N)
+oReport:Say(650,50,"CNPJ/CPF:",oFonte_12N)
+oReport:Say(650,250,SA2->A2_CGC,oFonte_12)
+oReport:Say(700,50,"Endereço:",oFonte_12N)
+oReport:Say(700,250,alltrim(SA2->A2_END)+" CEP."+SA2->A2_CEP,oFonte_12)
+oReport:Say(750,50,"Complemento:",oFonte_12N)
+oReport:Say(750,300,alltrim(SA2->A2_COMPLEM),oFonte_12)
+oReport:Say(800,50,"Bairro:",oFonte_12N)
+oReport:Say(800,250,alltrim(SA2->A2_BAIRRO),oFonte_12)
+oReport:Say(850,50,"Cidade:",oFonte_12N)
+oReport:Say(850,250,alltrim(SA2->A2_MUN)+" / "+SA2->A2_EST,oFonte_12)
+oReport:Say(900,50,"Fones:",oFonte_12N)
+oReport:Say(900,250,SA2->A2_DDD +" / "+SA2->A2_TEL+iif(empty(SA2->A2_FAX),""," / "+alltrim(SA2->A2_FAX)),oFonte_12)
+oReport:Say(950,50,"E-mail:",oFonte_12N)
+oReport:Say(950,250,alltrim(SA2->A2_EMAIL),oFonte_12)
+
+oReport:Box(510,1600,1010,2500,oBox) //Quadro 2 - Detalhes do Orçamento
+oReport:Say(590,1600+50,"Att Sr(a):",oFonte_12N)
+oReport:Say(590,1600+250,alltrim(SC7->C7_CONTATO),oFonte_12)
+//oReport:Say(650,1600+50,"Validade:",oFonte_12N)
+//oReport:Say(650,1600+250,DTOC(SL1->L1_DTLIM),oFonte_12)
+
+// pegando descrição do combobox
+_cTpFrete := "Sem Frete"
+dbSelectArea('SX3')
+SX3->( dbSetOrder(2) )
+SX3->( dbSeek( "L1_TPFRET" ) )
+_aCombo  := StrTokArr(X3Cbox(),";")
+_nPos  := aScan(_aCombo, {|x| substr(x,1,1)==SC7->C7_TPFRETE})
+
+if _nPos >0
+	_cTpFrete := SubStr(_aCombo[_nPos], 3, len(_aCombo[_nPos]))
+endif
+oReport:Say(700,1600+50,"Tipo Frete:",oFonte_12N)
+oReport:Say(700,1600+250,_cTpFrete,oFonte_12)
+oReport:Say(750,1600+50,"Transp:",oFonte_12N)
+oReport:Say(750,1600+250,alltrim(posicione("SA2",1,xFilial("SA2")+SC7->(C7_TRANSP+C7_TRANSLJ),"A2_NREDUZ")),oFonte_12)
+oReport:Say(800,1600+50,"Cond. Pagto:",oFonte_12N)
+oReport:Say(800,1600+300,POSICIONE("SE4",1,XFILIAL("SE4")+SC7->C7_COND,"E4_DESCRI"),oFonte_12)
+oReport:Say(900,1600+50,"(Situação: "+_Situac+")",oFonte_14N)
+
+Return( .T. )
+
+/*/
+ÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜ
+±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
+±±ÚÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄ¿±±
+±±³Fun‡…o    ³ImpRodR4³ Autor ³ wilk Lima          ³ Data ³ 09/02/22      ³±±
+±±ÃÄÄÄÄÄÄÄÄÄÄÅÄÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄ´±±
+±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
+ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß
+/*/
+Static Function ImpRodR4(oReport,nLinha)
+
+/*********************
+//Imprmindo os Rodapés
+*********************/
+nLinha += 100
+//Resumo do Pedido
+
+oReport:Say(nLinha+50,1120,"CONTINUA NA PRÓXIMA PÁGINA",oFonte_14N)
+
+nLinha := 3030
+
+oReport:SayBitmap(nLinha+135,1250,'\system\lgmid.png',126,100)
+
+Return( .T. )
